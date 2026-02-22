@@ -18,7 +18,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     model = report["model"]
 
     lines: list[str] = []
-    lines.append("# BreachPath AI Report")
+    lines.append("# BreachPath Report")
     lines.append("")
     lines.append("## Executive Summary")
     lines.append(f"- Assets scanned: **{len(hosts)}**")
