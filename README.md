@@ -1,14 +1,20 @@
 # VetroBreach (vetrobreach)
-**Attack Feasibility Engine** — turns **Nmap XML** output into an **explainable, non-exploit** risk simulation report with **Fix-First** remediation guidance.
+
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+**Attack Feasibility Engine** — turns **Nmap XML** into an **explainable, non-exploit** risk simulation report with **Fix-First** remediation guidance.
 
 > ⚠️ **Safety / Ethics**
 > - VetroBreach does **not** exploit targets.
 > - It does **not** brute-force credentials.
 > - It produces a **feasibility simulation** and **prioritization** output based on exposure signals and heuristics.
+> - Use only on systems you own or have explicit permission to assess.
 
 ---
 
 ## What it’s for
+
 Most scanners stop at “open port / service detected / CVSS”.  
 VetroBreach is designed to answer **operational questions**:
 
@@ -20,6 +26,7 @@ VetroBreach is designed to answer **operational questions**:
 ---
 
 ## Features
+
 - **Asset Inventory** (per host): port / service / product / version / TLS / version-age signal
 - **Prioritized Findings**: HIGH / MED / LOW
 - **Scenario Engine (service-combination based)**:
@@ -30,14 +37,18 @@ VetroBreach is designed to answer **operational questions**:
   - Orchestration/management API exposure
 - **Explainable Cost Model**:
   - Every finding includes a **cost estimate** and a **cost rationale formula**
-- **Version-age Severity Boost**:
-  - If `product/version` is present in Nmap output, older versions can increase severity/probability (heuristic)
+- **Version-age Severity Boost** (heuristic):
+  - If `product/version` is present in Nmap output, older versions can increase severity/probability
 - **Fix-First Plan**:
   - Technical, actionable containment steps (network / config / auth / monitoring)
+- **“WOW” CLI UI (Rich)**:
+  - ASCII banner + panels + progress + top findings table
+- **JSON export** for CI/CD or SOC pipelines
 
 ---
 
 ## Repository Layout
+
 Minimal by design (4 Python files):
 
 ```text
@@ -50,40 +61,77 @@ vetrobreach/
   requirements.txt
   LICENSE
   .gitignore
-```
+````
+
+---
 
 ## Installation
 
-# Requirements
+### Requirements
 
-Python 3.10+
-Nmap (to generate input)
-lxml
+* Python **3.10+**
+* **Nmap** (to generate input)
+* Python deps: `lxml` (+ `rich` for enhanced CLI UI)
 
-* Install:
+### Install
+
 ```bash
 pip install -r requirements.txt
 ```
 
+---
+
 ## Usage
 
-# 1) Generate Nmap XML
+### 1) Generate Nmap XML
 
-- You want service and version detection to get the best results:
+For best results, include service/version detection:
 
 ```bash
 nmap -sV -oX scan.xml <TARGET>
 ```
 
-# 2) Run VetroBreach
+Examples:
+
+```bash
+nmap -sV -oX scan.xml 10.10.10.10
+nmap -sV -oX scan.xml example.com
+```
+
+> Tip: Without `-sV`, product/version might be missing → version-age logic won’t apply.
+
+### 2) Run VetroBreach
 
 ```bash
 python breachpath.py --nmap scan.xml --out report.md
 ```
 
-# 3) Output
+### Output formats (MD / JSON / both)
 
-- You get a Markdown report (report.md) containing:
+```bash
+# Markdown only (default)
+python breachpath.py --nmap scan.xml --out report.md --format md
+
+# JSON only
+python breachpath.py --nmap scan.xml --format json --json-out report.json
+
+# Both
+python breachpath.py --nmap scan.xml --out report.md --format both --json-out report.json
+
+# Disable the fancy CLI UI (useful for CI)
+python breachpath.py --nmap scan.xml --format both --no-cli
+```
+
+---
+
+## Output
+
+VetroBreach generates:
+
+* `report.md` (human-readable)
+* `report.json` (pipeline-friendly)
+
+The Markdown report includes:
 
 * Executive summary
 * Asset inventory tables
@@ -92,138 +140,144 @@ python breachpath.py --nmap scan.xml --out report.md
 * Fix-First plan
 * Methodology & limitations
 
-## How it Works?
+---
 
-# Input Data
+## How it Works
 
-- VetroBreach consumes Nmap XML:
+### Input Data
 
-* open ports
-* service names
-* product/version banners
-TLS indicator via tunnel="ssl" (and common TLS ports)
+VetroBreach consumes **Nmap XML**:
 
-# Knowledge Base Rules (KB)
+* Open ports / protocols
+* Service names
+* Product/version banners (when available)
+* TLS hints via `tunnel="ssl"` and common TLS ports
 
-In kb.py, each “Technique” includes:
+### Knowledge Base Rules (KB)
+
+In `kb.py`, each “Technique” includes:
 
 * applicability rule (service match)
-* base probability p
-* base time window days
-* attacker effort effort_hours
+* base probability `p`
+* base time window `days`
+* attacker effort `effort_hours`
 * severity, category, family
 * technical remediation steps (“fix”)
 
-# Version-Age Severity Boost (Heuristic)
+This is **not CVE proof** — it’s a structured and explainable **risk signal model**.
 
-- If Nmap provides product/version, VetroBreach compares it against a small set of known baseline versions for common software (e.g., OpenSSH, nginx, MariaDB, Exim).
-- If the reported version appears behind baseline, VetroBreach:
+### Version-Age Severity Boost (Heuristic)
 
-* bumps severity (LOW→MED→HIGH)
+If Nmap provides `product/version`, VetroBreach compares it against a small set of baseline versions for common software (e.g., OpenSSH, nginx, MariaDB, Exim).
+
+If the reported version appears behind baseline, VetroBreach:
+
+* bumps severity (LOW → MED → HIGH)
 * increases probability slightly
 * reduces time window slightly
 * reduces estimated effort slightly
 
-- This does not mean “vulnerable”.
-- It means “older baseline → historically wider risk window”.
+> This does not mean “vulnerable”.
+> It means “older baseline → historically wider risk window”.
 
-- Baseline example reference for OpenSSH release notes:
+Baseline reference example:
 
-* OpenSSH release notes: https://www.openssh.com/releasenotes.html
-* (If you fork this repo, keep baseline values updated.)
+* [OpenSSH release notes](https://www.openssh.com/releasenotes.html)
 
-# Scenario Engine (Service Combination)
+### Scenario Engine (Service Combination)
 
-- Instead of “top findings per host”, scenarios combine service families to simulate realistic chains:
+Instead of “top findings per host”, scenarios combine service families to simulate realistic chains:
 
-* WEB + DATA → Web-to-Data pivot chain
-* MAIL + WEB → ATO pressure (credential reuse patterns)
-* REMOTE + DATA → Remote foothold → data impact
-* ORCH → orchestration/management exposure often has high impact
-* DATA alone → direct data-plane exposure
+* **WEB + DATA** → Web-to-Data pivot chain
+* **MAIL + WEB** → Account takeover pressure
+* **REMOTE + DATA** → Remote foothold → data impact
+* **ORCH** → orchestration/management exposure (often high impact)
+* **DATA** alone → direct data-plane exposure
 
-- Each scenario includes:
+Each scenario includes:
 
 * combined probability estimate
-* fastest time window
+* fastest time window estimate
 * cheapest estimated attacker cost
-* steps (high-level, non-exploit)
+* high-level steps (non-exploit)
+
+---
 
 ## Explainable Attacker Cost Model
 
-* VetroBreach uses an explainable heuristic cost model to avoid magic numbers. For each finding:
+VetroBreach uses an explainable heuristic cost model to avoid magic numbers.
 
-# 1) Attempt Cost (operator time + baseline infra)
+### 1) Attempt Cost (operator time + baseline infra)
 
 ```text
 attempt_cost = infra_fixed + effort_hours * labor_rate
 ```
 
-* labor_rate is a proxy for skilled operator time.
-* infra_fixed covers minimal infra/tooling baseline (small VPS/proxy/subscription).
+* `labor_rate` is a proxy for skilled operator time.
+* `infra_fixed` covers minimal infra/tooling baseline (small VPS/proxy/subscription).
 
-# 2) Alternative Cap: “Buy Access”
+### 2) Alternative Cap: “Buy Access”
 
-- In real attacker ecosystems, “initial access” can be purchased (IAB markets). So we cap the cost using an approximate median access price:
+In real attacker ecosystems, “initial access” can be purchased (IAB markets).
+So VetroBreach caps the estimate with a “buy access” proxy:
 
 ```text
 final_cost = min(attempt_cost, IAB_median)
 ```
 
-- The report prints a cost rationale line like:
-
+The report prints a rationale line like:
 
 ```text
 attempt_cost=$60+6.0h*$80/h=$540; buy_access_cap=$1000 => final=min(...)=$540
 ```
 
-- Why these parameters?
+**Important:** This is not a guaranteed “attacker budget”.
+It’s a transparent estimate designed for prioritization and risk conversations.
 
-* Skilled pentesting hourly rates vary; a median ~$80/h appears as a common market proxy.
-* Initial Access Broker pricing varies; many observed listings cluster under a few thousand with typical medians around ~$1,000 in reports.
-* Commodity “attack infrastructure” can be inexpensive; booter/stresser economics show low monthly pricing in academic work (we abstract this into a fixed baseline).
-**Important: This is not a guaranteed “attacker budget”.**
-* It is a transparent estimate designed for prioritization and risk conversations.
+---
 
 ## Why You Should NOT Trust It 100% (Limitations)
 
-* VetroBreach is a feasibility simulator, not a proof engine.
-* No vulnerability proof
-* Nmap shows exposure; it does not confirm CVEs/misconfig exploitability.
-* No network topology context
-* Segmentation, VLANs, ACLs, egress filtering, bastions can fully change pivot feasibility.
-* No identity/security telemetry
-* MFA coverage, password policies, lockouts, IdP logs heavily affect credential-risk realism.
-* Banner/version inaccuracies
-* Reverse proxies, masking, or middleboxes can misreport products/versions.
-* Independence assumption
-* Probability aggregation uses a simple independence model; real-world signals can correlate.
+VetroBreach is a feasibility simulator, not a proof engine.
+
+* **No vulnerability proof**
+  Nmap shows exposure; it does not confirm CVEs/misconfig exploitability.
+* **No network topology context**
+  Segmentation, VLANs, ACLs, egress filtering, bastions can fully change pivot feasibility.
+* **No identity/security telemetry**
+  MFA coverage, password policies, lockouts, IdP logs heavily affect credential-risk realism.
+* **Banner/version inaccuracies**
+  Reverse proxies, masking, or middleboxes can misreport products/versions.
+* **Independence assumption**
+  Probability aggregation uses a simple independence model; real-world signals can correlate.
+
+---
 
 ## How to Use It Responsibly
 
-- Treat VetroBreach as:
+Treat VetroBreach as:
 
 * a prioritization assistant
 * a tabletop scenario generator
 * an exposure-to-remediation bridge
 
-- Best practice workflow:
+Best practice workflow:
 
-* Generate report
-* Fix DATA/ORCH/REMOTE exposures first
+1. Generate report
+2. Fix **DATA / ORCH / REMOTE** exposures first
+3. Validate with:
 
-- Validate with:
+   * vulnerability scanning (Nessus/OpenVAS)
+   * configuration review
+   * IAM posture (MFA, lockouts)
+   * logs/telemetry
+4. Re-run after remediation
 
-* vulnerability scanning (Nessus/OpenVAS)
-* configuration review
-* IAM posture (MFA, lockouts)
-* logs/telemetry
-* Re-run after remediation
-
+---
 
 ## Make It Enterprise-Grade (Recommended Extensions)
 
-- To increase accuracy, ingest:
+To increase accuracy, ingest:
 
 * Nessus/OpenVAS findings (CVE evidence)
 * AD posture (SMB signing, LDAP, Kerberos)
@@ -231,11 +285,16 @@ attempt_cost=$60+6.0h*$80/h=$540; buy_access_cap=$1000 => final=min(...)=$540
 * auth telemetry (spray patterns, lockouts)
 * cloud security posture (security groups, IAM policies)
 
+---
+
 ## Disclaimer
 
-* This project is provided “as is”.
-* Use only on systems you own or have explicit permission to assess.
+This project is provided “as is”.
+Use only on systems you own or have explicit permission to assess.
 
-## Author 
+---
+
+## Author
 
 **Burak Akpınar**
+
